@@ -39,6 +39,15 @@ class ApiClient {
       credentials: 'include' // Important for Flask sessions
     }
 
+    // Add Authorization header if token exists (for mobile compatibility)
+    const token = localStorage.getItem('auth_token')
+    if (token) {
+      config.headers = {
+        ...config.headers,
+        'Authorization': `Bearer ${token}`
+      }
+    }
+
     // Only add Content-Type header if there's a body (DELETE requests without body shouldn't have Content-Type)
     if (body) {
       config.headers = {

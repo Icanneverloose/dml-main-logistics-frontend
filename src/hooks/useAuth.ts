@@ -83,6 +83,10 @@ export const useAuth = () => {
     try {
       const response = await api.signUp(email, password, name) as any
       if (response.success && response.user) {
+        // Store token in localStorage for mobile compatibility
+        if (response.token) {
+          localStorage.setItem('auth_token', response.token)
+        }
         await checkAuth() // Refresh auth state
         return { data: response, error: null }
       }
@@ -96,6 +100,10 @@ export const useAuth = () => {
     try {
       const response = await api.signIn(email, password) as any
       if (response.success && response.user) {
+        // Store token in localStorage for mobile compatibility
+        if (response.token) {
+          localStorage.setItem('auth_token', response.token)
+        }
         await checkAuth() // Refresh auth state
         return { data: response, error: null }
       }
@@ -108,6 +116,8 @@ export const useAuth = () => {
   const signOut = async () => {
     try {
       await api.signOut()
+      // Clear token from localStorage
+      localStorage.removeItem('auth_token')
       setAuthState({ user: null, loading: false, isAdmin: false })
     } catch (error) {
       console.error('Error signing out:', error)
