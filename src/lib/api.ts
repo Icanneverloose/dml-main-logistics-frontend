@@ -274,6 +274,7 @@ class ApiClient {
     location?: string
     coordinates?: string
     note?: string
+    timestamp?: string
   }) {
     return this.request(`/shipments/${trackingNumber}/status`, {
       method: 'PUT',

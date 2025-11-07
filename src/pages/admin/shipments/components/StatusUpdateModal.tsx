@@ -23,6 +23,19 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({
   const [coordinates, setCoordinates] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // Add date and time state
+  const [useCustomDateTime, setUseCustomDateTime] = useState(false);
+  const [customDate, setCustomDate] = useState(() => {
+    const now = new Date();
+    return now.toISOString().split('T')[0]; // YYYY-MM-DD format
+  });
+  const [customTime, setCustomTime] = useState(() => {
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`; // HH:MM format
+  });
 
   const statusOptions = [
     'Registered',
@@ -46,16 +59,44 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({
         return;
       }
 
-      const response = await api.updateShipmentStatus(identifier, {
+      // Prepare status data
+      const statusData: any = {
         status,
         location: location || undefined,
         coordinates: coordinates || undefined,
         note: note || undefined
-      }) as any;
+      };
+
+      // Add custom timestamp if selected
+      if (useCustomDateTime && customDate && customTime) {
+        // Combine date and time, treating it as local time
+        const dateTimeString = `${customDate}T${customTime}:00`;
+        const customDateTime = new Date(dateTimeString);
+        
+        // Validate the date
+        if (!isNaN(customDateTime.getTime())) {
+          // Get timezone offset to preserve local time
+          const offset = -customDateTime.getTimezoneOffset();
+          const offsetHours = Math.floor(Math.abs(offset) / 60).toString().padStart(2, '0');
+          const offsetMinutes = (Math.abs(offset) % 60).toString().padStart(2, '0');
+          const offsetSign = offset >= 0 ? '+' : '-';
+          
+          // Format: YYYY-MM-DDTHH:mm:ss+HH:mm (with timezone offset)
+          // This preserves the exact local time the user selected
+          statusData.timestamp = `${customDate}T${customTime}:00${offsetSign}${offsetHours}:${offsetMinutes}`;
+        } else {
+          toast.error('Invalid date or time selected');
+          setLoading(false);
+          return;
+        }
+      }
+
+      const response = await api.updateShipmentStatus(identifier, statusData) as any;
 
       if (response.success) {
         await onUpdate();
         toast.success('Status updated successfully!');
+        onClose();
       } else {
         toast.error(response.error || 'Failed to update status');
       }
@@ -67,6 +108,15 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({
   };
 
   if (!isOpen) return null;
+
+  // Get current date/time for display
+  const currentDateTime = new Date();
+  const displayDate = useCustomDateTime 
+    ? new Date(`${customDate}T${customTime}:00`).toLocaleDateString()
+    : currentDateTime.toLocaleDateString();
+  const displayTime = useCustomDateTime
+    ? new Date(`${customDate}T${customTime}:00`).toLocaleTimeString()
+    : currentDateTime.toLocaleTimeString();
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -111,15 +161,19 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({
           {/* Location */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Location
+              Location *
             </label>
             <input
               type="text"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="e.g., New York Facility, Los Angeles Hub"
+              required
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#009FE3] focus:border-transparent text-gray-900 bg-white"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              This location will appear in the tracking timeline
+            </p>
           </div>
 
           {/* Coordinates */}
@@ -135,6 +189,51 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#009FE3] focus:border-transparent text-gray-900 bg-white"
             />
             <p className="text-xs text-gray-500 mt-1">Latitude, Longitude format</p>
+          </div>
+
+          {/* Date and Time Selection */}
+          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <div className="flex items-center mb-4">
+              <input
+                type="checkbox"
+                id="useCustomDateTime"
+                checked={useCustomDateTime}
+                onChange={(e) => setUseCustomDateTime(e.target.checked)}
+                className="w-4 h-4 text-[#009FE3] border-gray-300 rounded focus:ring-[#009FE3]"
+              />
+              <label htmlFor="useCustomDateTime" className="ml-2 text-sm font-medium text-gray-700">
+                Use custom date and time
+              </label>
+            </div>
+
+            {useCustomDateTime && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    required={useCustomDateTime}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#009FE3] focus:border-transparent text-gray-900 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Time *
+                  </label>
+                  <input
+                    type="time"
+                    value={customTime}
+                    onChange={(e) => setCustomTime(e.target.value)}
+                    required={useCustomDateTime}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#009FE3] focus:border-transparent text-gray-900 bg-white"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Note */}
@@ -162,7 +261,7 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({
                 <p className="font-medium mb-1">Status Update Details</p>
                 <p>This update will be recorded in the shipment timeline with:</p>
                 <ul className="list-disc list-inside mt-1 space-y-1">
-                  <li>Date & Time: {new Date().toLocaleString()}</li>
+                  <li>Date & Time: {displayDate} at {displayTime}</li>
                   <li>Updated by: {user?.name || 'Admin'}</li>
                   {location && <li>Location: {location}</li>}
                 </ul>
@@ -181,7 +280,7 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={loading || !status}
+              disabled={loading || !status || !location}
               className="px-6 py-2 bg-[#009FE3] text-white rounded-lg hover:bg-[#007bb3] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               {loading ? (
@@ -204,4 +303,3 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({
 };
 
 export default StatusUpdateModal;
-

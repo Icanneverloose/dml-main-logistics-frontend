@@ -100,12 +100,14 @@ const Track = () => {
       let statusResponse: any = null;
       try {
         statusResponse = await api.getShipmentStatus(upperCaseId) as any;
-        if (!statusResponse.success && !statusResponse.history) {
+        console.log('Status response (uppercase):', statusResponse);
+        if (!statusResponse || (!statusResponse.success && !statusResponse.history)) {
           // Try original case if uppercase fails
           statusResponse = await api.getShipmentStatus(originalId) as any;
+          console.log('Status response (original case):', statusResponse);
         }
       } catch (statusErr) {
-        console.log('Could not fetch status history:', statusErr);
+        console.error('Could not fetch status history:', statusErr);
       }
       
       // Extract shipment data from various possible response formats
@@ -113,46 +115,119 @@ const Track = () => {
       
       // If we have status history, use it
       if (statusResponse?.success && statusResponse.history && statusResponse.history.length > 0) {
-        const latestStatus = statusResponse.history[statusResponse.history.length - 1];
+        console.log('Status history received:', statusResponse.history);
+        console.log('Shipment data received:', shipment);
+        
+        // Sort history by timestamp to ensure chronological order (oldest first)
+        const sortedHistory = [...statusResponse.history].sort((a, b) => {
+          const dateA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+          const dateB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+          return dateA - dateB;
+        });
+        
+        console.log('Sorted history:', sortedHistory);
+        console.log('Shipment current_location from API:', shipment?.current_location);
+        
+        // Get the latest status (last item in sorted array)
+        const latestStatus = sortedHistory[sortedHistory.length - 1];
+        
+        // Find the most recent location from status history (work backwards from latest)
+        // This ensures we use the last location updated from admin dashboard, not sender's address
+        let currentLocation = 'Location not specified';
+        for (let i = sortedHistory.length - 1; i >= 0; i--) {
+          const logLocation = sortedHistory[i].location;
+          console.log(`Checking history entry ${i}: location =`, logLocation);
+          if (logLocation && typeof logLocation === 'string' && logLocation.trim() !== '') {
+            currentLocation = logLocation.trim();
+            console.log('Found location from history:', currentLocation);
+            break;
+          }
+        }
+        
+        // Only fallback to shipment current_location if no location found in history
+        // Never use sender_address as it's not the current location
+        if (currentLocation === 'Location not specified') {
+          console.log('No location found in history, checking shipment.current_location:', shipment?.current_location);
+          if (shipment?.current_location && typeof shipment.current_location === 'string' && shipment.current_location.trim() !== '') {
+            currentLocation = shipment.current_location.trim();
+            console.log('Using shipment.current_location:', currentLocation);
+          }
+        }
+        
+        console.log('Final currentLocation:', currentLocation);
+        
+        // Map history to timeline format (like Gemini tracker)
+        const timeline = sortedHistory.map((log: any, index: number) => {
+          const isLast = index === sortedHistory.length - 1;
+          const isDelivered = (latestStatus.status || shipment?.status || '').toLowerCase() === 'delivered';
+          
+          // Pass ISO timestamp directly to Timeline component for proper parsing
+          return {
+            status: log.status || 'Unknown',
+            location: log.location || 'N/A',
+            date: log.timestamp || 'N/A',
+            time: '',
+            completed: isLast ? isDelivered : true, // All previous entries completed, last only if delivered
+            coordinates: log.coordinates,
+            note: log.note
+          };
+        });
+        
+        console.log('Timeline data:', timeline);
+        
+        // Double-check: if timeline has locations, use the last one from timeline
+        // This ensures we always use the location from admin status updates
+        let finalCurrentLocation = currentLocation;
+        if (timeline && timeline.length > 0) {
+          // Find the last timeline entry with a valid location
+          for (let i = timeline.length - 1; i >= 0; i--) {
+            const timelineLocation = timeline[i].location;
+            if (timelineLocation && timelineLocation !== 'N/A' && typeof timelineLocation === 'string' && timelineLocation.trim() !== '') {
+              finalCurrentLocation = timelineLocation.trim();
+              console.log('Using location from timeline entry:', finalCurrentLocation);
+              break;
+            }
+          }
+        }
+        
+        // Also check if statusResponse has current_location (from backend)
+        if (finalCurrentLocation === 'Location not specified' && statusResponse?.current_location) {
+          finalCurrentLocation = statusResponse.current_location;
+          console.log('Using current_location from statusResponse:', finalCurrentLocation);
+        }
         
         const trackingData = {
           trackingId: trackingIdUsed,
           status: latestStatus.status || shipment?.status || 'Unknown',
           estimatedDelivery: shipment?.estimated_delivery_date || shipment?.estimated_delivery || null,
-          currentLocation: latestStatus.location || shipment?.current_location || shipment?.sender_address || 'Location not specified',
+          // Use the most recent location from status history/timeline (from admin updates)
+          currentLocation: finalCurrentLocation,
           recipient: shipment?.receiver_name || shipment?.recipient_name || null,
           destination: shipment?.receiver_address || shipment?.destination || null,
           service: shipment?.package_type || shipment?.service_type || null,
-          timeline: statusResponse.history.map((log: any, index: number) => {
-            const isLast = index === statusResponse.history.length - 1;
-            const isDelivered = (latestStatus.status || shipment?.status || '').toLowerCase() === 'delivered';
-            return {
-              status: log.status,
-              location: log.location || 'N/A',
-              date: log.timestamp ? new Date(log.timestamp).toLocaleDateString() : 'N/A',
-              time: log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : 'N/A',
-              completed: isLast ? isDelivered : true,
-              coordinates: log.coordinates,
-              note: log.note
-            };
-          })
+          timeline: timeline
         };
         
+        console.log('Final tracking data:', trackingData);
         setTrackingData(trackingData);
       } 
       // If we have shipment details but no status history, create basic timeline
       else if (shipment) {
+        // Use current_location from shipment, but never use sender_address as fallback
+        const locationForTimeline = shipment.current_location || shipment.receiver_address || 'N/A';
+        
         const trackingData = {
           trackingId: trackingIdUsed,
           status: shipment.status || 'Registered',
           estimatedDelivery: shipment.estimated_delivery_date || shipment.estimated_delivery || null,
-          currentLocation: shipment.current_location || shipment.sender_address || 'Location not specified',
+          // Use current_location from shipment, never fallback to sender_address
+          currentLocation: shipment.current_location || 'Location not specified',
           recipient: shipment.receiver_name || shipment.recipient_name || null,
           destination: shipment.receiver_address || shipment.destination || null,
           service: shipment.package_type || shipment.service_type || null,
           timeline: [{
             status: shipment.status || 'Registered',
-            location: shipment.current_location || shipment.sender_address || shipment.receiver_address || 'N/A',
+            location: locationForTimeline,
             date: shipment.date_registered ? new Date(shipment.date_registered).toLocaleDateString() : new Date().toLocaleDateString(),
             time: shipment.date_registered ? new Date(shipment.date_registered).toLocaleTimeString() : new Date().toLocaleTimeString(),
             completed: false,

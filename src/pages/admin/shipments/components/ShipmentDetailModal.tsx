@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../../../lib/api';
 import type { Shipment, StatusLog } from '../../../../hooks/useShipments';
+import Timeline from '../../../track/components/Timeline';
 
 interface ShipmentDetailModalProps {
   shipment: Shipment;
@@ -29,12 +30,25 @@ const ShipmentDetailModal: React.FC<ShipmentDetailModalProps> = ({
     }
   }, [activeTab, shipment.tracking_number, isOpen]);
 
+  // Refresh timeline when status is updated
+  useEffect(() => {
+    if (isOpen && activeTab === 'tracking') {
+      fetchStatusHistory();
+    }
+  }, [shipment.status, isOpen, activeTab]);
+
   const fetchStatusHistory = async () => {
     try {
       setLoadingHistory(true);
       const response = await api.getShipmentStatus(shipment.tracking_number) as any;
       if (response.success && response.history) {
-        setStatusHistory(response.history);
+        // Sort history by timestamp to ensure chronological order (oldest first)
+        const sortedHistory = [...response.history].sort((a: StatusLog, b: StatusLog) => {
+          const dateA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+          const dateB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+          return dateA - dateB;
+        });
+        setStatusHistory(sortedHistory);
       }
     } catch (error) {
       console.error('Error fetching status history:', error);
@@ -294,54 +308,29 @@ const ShipmentDetailModal: React.FC<ShipmentDetailModalProps> = ({
                   <p className="text-sm text-gray-400 mt-2">Status updates will appear here</p>
                     </div>
                   ) : (
-                <div className="relative">
-                  {/* Timeline Line */}
-                  <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-200"></div>
-                  
-                  {/* Timeline Items */}
-                  <div className="space-y-6">
-                      {statusHistory.map((log, index) => (
-                      <div key={index} className="relative flex items-start space-x-4">
-                        {/* Icon */}
-                        <div className={`relative z-10 w-12 h-12 rounded-full flex items-center justify-center ${
-                          index === 0 
-                            ? 'bg-[#009FE3] text-white' 
-                            : 'bg-gray-200 text-gray-600'
-                            }`}>
-                          <i className={getStatusIcon(log.status)}></i>
-                            </div>
-                        
-                        {/* Content */}
-                        <div className="flex-1 bg-gray-50 rounded-lg p-4">
-                          <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                              <h4 className="font-semibold text-gray-900">{log.status}</h4>
-                            {log.location && (
-                                <p className="text-sm text-gray-600 mt-1 flex items-center">
-                                <i className="ri-map-pin-line mr-1"></i>
-                                {log.location}
-                              </p>
-                            )}
-                            {log.note && (
-                                <p className="text-sm text-gray-600 mt-2">
-                                <i className="ri-message-line mr-1"></i>
-                                {log.note}
-                              </p>
-                            )}
-                              {log.coordinates && (
-                                <p className="text-xs text-gray-500 font-mono mt-1">
-                                  Coordinates: {log.coordinates}
-                                </p>
-                              )}
-                            </div>
-                            <p className="text-xs text-gray-500 whitespace-nowrap ml-4">
-                              {log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A'}
-                            </p>
-                          </div>
-                </div>
-              </div>
-                    ))}
-                  </div>
+                <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+                  <Timeline 
+                    events={statusHistory.map((log, index) => {
+                      const isLast = index === statusHistory.length - 1;
+                      const isDelivered = (shipment.status || '').toLowerCase() === 'delivered';
+                      
+                      // Pass ISO timestamp directly to Timeline component for proper parsing
+                      // Build note from available information
+                      let note = log.note || '';
+                      if (log.coordinates) {
+                        note = note ? `${note} (Coordinates: ${log.coordinates})` : `Coordinates: ${log.coordinates}`;
+                      }
+                      
+                      return {
+                        status: log.status || 'Unknown',
+                        location: log.location || 'N/A',
+                        date: log.timestamp || 'N/A',
+                        time: '',
+                        completed: isLast ? isDelivered : true, // All previous entries completed, last only if delivered
+                        note: note || undefined
+                      };
+                    })}
+                  />
                 </div>
               )}
               </div>

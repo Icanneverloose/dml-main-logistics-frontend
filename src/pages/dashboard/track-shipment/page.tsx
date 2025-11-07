@@ -7,6 +7,7 @@ import { useAuth } from '../../../hooks/useAuth';
 import { generatePDFReceipt } from '../../../utils/pdfGenerator';
 import { toast } from '../../../components/Toast';
 import type { Shipment } from '../../../hooks/useShipments';
+import Timeline from '../../track/components/Timeline';
 
 const TrackShipmentPage = () => {
   const { user, loading } = useAuth();
@@ -74,33 +75,95 @@ const TrackShipmentPage = () => {
       
       // If we have status history, use it
       if (statusResponse?.success && statusResponse.history && statusResponse.history.length > 0) {
-        const latestStatus = statusResponse.history[statusResponse.history.length - 1];
+        // Sort history by timestamp to ensure chronological order (oldest first)
+        const sortedHistory = [...statusResponse.history].sort((a, b) => {
+          const dateA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+          const dateB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+          return dateA - dateB;
+        });
+        
+        // Get the latest status (last item in sorted array)
+        const latestStatus = sortedHistory[sortedHistory.length - 1];
+        
+        // Find the most recent location from status history (work backwards from latest)
+        // This ensures we use the last location updated from admin dashboard, not sender's address
+        let currentLocation = 'Location not specified';
+        for (let i = sortedHistory.length - 1; i >= 0; i--) {
+          const logLocation = sortedHistory[i].location;
+          if (logLocation && typeof logLocation === 'string' && logLocation.trim() !== '') {
+            currentLocation = logLocation.trim();
+            break;
+          }
+        }
+        // Only fallback to shipment current_location if no location found in history
+        // Never use sender_address as it's not the current location
+        if (currentLocation === 'Location not specified') {
+          if (shipment.current_location && typeof shipment.current_location === 'string' && shipment.current_location.trim() !== '') {
+            currentLocation = shipment.current_location.trim();
+          }
+          // Also check statusResponse for current_location
+          else if (statusResponse?.current_location && typeof statusResponse.current_location === 'string' && statusResponse.current_location.trim() !== '') {
+            currentLocation = statusResponse.current_location.trim();
+          }
+        }
+        
+        // Create timeline first to ensure we can extract location from it
+        const timelineData = sortedHistory.map((log: any, index: number) => {
+          const isLast = index === sortedHistory.length - 1;
+          const isDelivered = (latestStatus.status || shipment.status || '').toLowerCase() === 'delivered';
+          return {
+            date: log.timestamp || 'N/A',
+            time: '',
+            status: log.status,
+            location: log.location || 'N/A',
+            description: log.note || `${log.status} at ${log.location || 'facility'}`,
+            completed: isLast ? isDelivered : true
+          };
+        });
+        
+        // Double-check: if timeline has locations, use the last one from timeline
+        // This ensures we always use the location from admin status updates
+        let finalCurrentLocation = currentLocation;
+        if (timelineData && timelineData.length > 0) {
+          // Find the last timeline entry with a valid location
+          for (let i = timelineData.length - 1; i >= 0; i--) {
+            const timelineLocation = timelineData[i].location;
+            if (timelineLocation && timelineLocation !== 'N/A' && typeof timelineLocation === 'string' && timelineLocation.trim() !== '') {
+              finalCurrentLocation = timelineLocation.trim();
+              break;
+            }
+          }
+        }
+        
+        // Also check if statusResponse has current_location (from backend)
+        if (finalCurrentLocation === 'Location not specified' && statusResponse?.current_location) {
+          finalCurrentLocation = statusResponse.current_location;
+        }
         
         setTrackingResult({
           trackingNumber: trackingIdUsed,
           status: latestStatus.status || shipment.status || 'Unknown',
           estimatedDelivery: shipment.estimated_delivery_date || null,
-          currentLocation: latestStatus.location || shipment.current_location || shipment.sender_address || 'Location not specified',
+          // Use the most recent location from status history/timeline (from admin updates)
+          currentLocation: finalCurrentLocation,
           sender: shipment.sender_name || 'N/A',
           recipient: shipment.receiver_name || 'N/A',
           service: shipment.package_type || 'Standard',
           weight: shipment.weight ? `${shipment.weight} kg` : 'N/A',
-          timeline: statusResponse.history.map((log: any) => ({
-            date: log.timestamp ? new Date(log.timestamp).toLocaleDateString() : 'N/A',
-            time: log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : 'N/A',
-            status: log.status,
-            location: log.location || 'N/A',
-            description: log.note || `${log.status} at ${log.location || 'facility'}`
-          }))
+          timeline: timelineData
         });
       } 
       // If we have shipment details but no status history, create basic timeline
       else if (shipment && (shipmentDetails?.success || shipment.status || shipment.tracking_number)) {
+        // Use current_location from shipment, never fallback to sender_address
+        const locationForTimeline = shipment.current_location || 'N/A';
+        
         setTrackingResult({
           trackingNumber: trackingIdUsed,
           status: shipment.status || 'Registered',
           estimatedDelivery: shipment.estimated_delivery_date || null,
-          currentLocation: shipment.current_location || shipment.sender_address || 'Location not specified',
+          // Use current_location from shipment, never use sender_address
+          currentLocation: shipment.current_location || 'Location not specified',
           sender: shipment.sender_name || 'N/A',
           recipient: shipment.receiver_name || 'N/A',
           service: shipment.package_type || 'Standard',
@@ -109,7 +172,7 @@ const TrackShipmentPage = () => {
             date: shipment.date_registered ? new Date(shipment.date_registered).toLocaleDateString() : new Date().toLocaleDateString(),
             time: shipment.date_registered ? new Date(shipment.date_registered).toLocaleTimeString() : new Date().toLocaleTimeString(),
             status: shipment.status || 'Registered',
-            location: shipment.current_location || shipment.sender_address || 'N/A',
+            location: locationForTimeline,
             description: 'Shipment registered'
           }]
         });
@@ -362,25 +425,18 @@ const TrackShipmentPage = () => {
               </div>
 
               {/* Tracking Timeline */}
-              <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                 <h3 className="text-lg font-semibold text-gray-900 mb-6">Tracking History</h3>
-                <div className="space-y-4">
-                  {trackingResult.timeline.map((event: any, index: number) => (
-                    <div key={index} className="flex items-start space-x-4">
-                      <div className="flex-shrink-0">
-                        <div className={`w-3 h-3 rounded-full ${index === 0 ? 'bg-blue-600' : 'bg-gray-300'}`}></div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-medium text-gray-900">{event.status}</p>
-                          <p className="text-sm text-gray-500">{event.date} at {event.time}</p>
-                        </div>
-                        <p className="text-sm text-gray-600">{event.location}</p>
-                        <p className="text-sm text-gray-500 mt-1">{event.description}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <Timeline 
+                  events={trackingResult.timeline.map((event: any) => ({
+                    status: event.status || 'Unknown',
+                    location: event.location || 'N/A',
+                    date: event.date || 'N/A',
+                    time: event.time || 'N/A',
+                    completed: event.completed !== undefined ? event.completed : false,
+                    note: event.description || event.note || undefined
+                  }))}
+                />
               </div>
 
               {/* Actions */}
