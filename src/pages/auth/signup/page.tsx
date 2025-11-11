@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 
 const SignUp = () => {
@@ -62,16 +62,23 @@ const SignUp = () => {
 
       if (error) {
         setErrors({ general: error.message });
-      } else if (data?.user) {
-        // Account created successfully, redirect to dashboard
-        navigate('/dashboard');
-      } else {
-        setErrors({ general: 'Account created successfully! Redirecting...' });
-        setTimeout(() => navigate('/dashboard'), 1000);
+        setIsLoading(false);
+        return;
       }
-    } catch (error) {
-      setErrors({ general: 'An unexpected error occurred. Please try again.' });
-    } finally {
+
+      // Account created successfully - user is now authenticated
+      // The signUp function has already set the user state
+      // IMPORTANT: Public signups always get 'user' role and should go to user dashboard, not admin
+      setErrors({ general: 'Account created successfully! Redirecting to your dashboard...' });
+      
+      // Always navigate to user dashboard (/dashboard) - never to admin dashboard
+      // Public signups get 'user' role and can only access user dashboard
+      setTimeout(() => {
+        navigate('/dashboard');  // User dashboard, not /admin
+        setIsLoading(false);
+      }, 500);
+    } catch (error: any) {
+      setErrors({ general: error?.message || 'An unexpected error occurred. Please try again.' });
       setIsLoading(false);
     }
   };
@@ -264,9 +271,13 @@ const SignUp = () => {
       <div className="mt-6 text-center">
         <p className="text-sm text-gray-600">
           Already have an account?{' '}
-          <Link to="/auth/signin" className="font-medium text-blue-600 hover:text-blue-500 cursor-pointer">
+          <button
+            type="button"
+            onClick={() => navigate('/auth/signin')}
+            className="font-medium text-blue-600 hover:text-blue-500 cursor-pointer bg-transparent border-none p-0 underline"
+          >
             Sign in here
-          </Link>
+          </button>
         </p>
       </div>
     </div>

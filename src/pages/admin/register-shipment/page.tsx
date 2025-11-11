@@ -73,39 +73,57 @@ const RegisterShipmentPage = () => {
     try {
       // Validate required fields
       if (!formData.sender_name || !formData.sender_email || !formData.sender_phone || !formData.sender_address ||
-          !formData.sender_city || !formData.sender_state || !formData.sender_zip || !formData.sender_country ||
+          !formData.sender_city || !formData.sender_state || !formData.sender_country ||
           !formData.receiver_name || !formData.receiver_phone || !formData.receiver_address ||
-          !formData.receiver_city || !formData.receiver_state || !formData.receiver_zip || !formData.receiver_country ||
-          !formData.weight || !formData.shipment_cost) {
+          !formData.receiver_city || !formData.receiver_state || !formData.receiver_country ||
+          !formData.weight) {
         toast.error('Please fill in all required fields');
         setLoading(false);
         return;
       }
 
+      // Construct sender address with optional zip code
+      let senderAddress = `${formData.sender_address}, ${formData.sender_city}, ${formData.sender_state}`;
+      if (formData.sender_zip && formData.sender_zip.trim()) {
+        senderAddress += ` ${formData.sender_zip}`;
+      }
+      senderAddress += `, ${formData.sender_country}`;
+
+      // Construct receiver address with optional zip code
+      let receiverAddress = `${formData.receiver_address}, ${formData.receiver_city}, ${formData.receiver_state}`;
+      if (formData.receiver_zip && formData.receiver_zip.trim()) {
+        receiverAddress += ` ${formData.receiver_zip}`;
+      }
+      receiverAddress += `, ${formData.receiver_country}`;
+
       // Prepare shipment data according to backend requirements
-      const shipmentData = {
+      // Handle shipment_cost - default to 0 if not provided or invalid
+      let shipmentCostValue = 0;
+      if (formData.shipment_cost !== '' && formData.shipment_cost !== null && formData.shipment_cost !== undefined) {
+        const cost = parseFloat(formData.shipment_cost.toString());
+        if (!isNaN(cost) && cost >= 0) {
+          shipmentCostValue = cost;
+        }
+      }
+
+      const shipmentData: any = {
         sender_name: formData.sender_name.trim(),
         sender_email: formData.sender_email.trim(),
         sender_phone: formData.sender_phone.trim(),
-        sender_address: `${formData.sender_address}, ${formData.sender_city}, ${formData.sender_state} ${formData.sender_zip}, ${formData.sender_country}`.trim(),
+        sender_address: senderAddress.trim(),
         receiver_name: formData.receiver_name.trim(),
         receiver_email: formData.receiver_email?.trim() || '',
         receiver_phone: formData.receiver_phone.trim(),
-        receiver_address: `${formData.receiver_address}, ${formData.receiver_city}, ${formData.receiver_state} ${formData.receiver_zip}, ${formData.receiver_country}`.trim(),
+        receiver_address: receiverAddress.trim(),
         package_type: formData.package_type || 'Standard',
         weight: parseFloat(formData.weight.toString()) || 0,
-        shipment_cost: parseFloat(formData.shipment_cost.toString()) || 0,
+        shipment_cost: shipmentCostValue, // Always include shipment_cost, default to 0
         estimated_delivery_date: formData.estimated_delivery_date || undefined
       };
 
       // Validate numeric values
       if (shipmentData.weight <= 0) {
         toast.error('Weight must be greater than 0');
-        setLoading(false);
-        return;
-      }
-      if (shipmentData.shipment_cost <= 0) {
-        toast.error('Shipping cost must be greater than 0');
         setLoading(false);
         return;
       }
@@ -251,13 +269,12 @@ const RegisterShipmentPage = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">ZIP/Postal Code *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ZIP/Postal Code</label>
                   <input
                     type="text"
                     name="sender_zip"
                     value={formData.sender_zip}
                     onChange={handleChange}
-                    required
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#009FE3] focus:border-transparent text-gray-900 bg-white"
                   />
                 </div>
@@ -349,13 +366,12 @@ const RegisterShipmentPage = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">ZIP/Postal Code *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ZIP/Postal Code</label>
                   <input
                     type="text"
                     name="receiver_zip"
                     value={formData.receiver_zip}
                     onChange={handleChange}
-                    required
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#009FE3] focus:border-transparent text-gray-900 bg-white"
                   />
                 </div>
@@ -400,13 +416,12 @@ const RegisterShipmentPage = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Cost ($) *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Cost ($)</label>
                   <input
                     type="number"
                     name="shipment_cost"
                     value={formData.shipment_cost}
                     onChange={handleChange}
-                    required
                     min="0"
                     step="0.01"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#009FE3] focus:border-transparent text-gray-900 bg-white"

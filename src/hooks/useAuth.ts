@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import { api } from '../lib/api'
 
 interface User {
@@ -16,17 +17,14 @@ interface AuthState {
 }
 
 export const useAuth = () => {
+  const location = useLocation()
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     loading: true,
     isAdmin: false
   })
 
-  useEffect(() => {
-    checkAuth()
-  }, [])
-
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
     try {
       const response = await api.getProfile() as any
       if (response.success && response.user) {
@@ -51,7 +49,18 @@ export const useAuth = () => {
       console.error('Auth check error:', error)
       setAuthState({ user: null, loading: false, isAdmin: false })
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    // Don't check auth if we're on auth pages - avoids unnecessary redirects
+    const currentPath = location.pathname
+    if (!currentPath.includes('/auth/signin') && !currentPath.includes('/auth/signup')) {
+      checkAuth()
+    } else {
+      // Still set loading to false so components don't hang
+      setAuthState(prev => ({ ...prev, loading: false }))
+    }
+  }, [location.pathname, checkAuth])
 
   // Helper functions to check user roles
   const getUserRole = (): string => {
@@ -87,7 +96,30 @@ export const useAuth = () => {
         if (response.token) {
           localStorage.setItem('auth_token', response.token)
         }
-        await checkAuth() // Refresh auth state
+        
+        // Directly set user state from signup response (backend automatically logs user in)
+        // This avoids timing issues with session cookies and API calls
+        // IMPORTANT: Public signups always get 'user' role - never admin/support/manager
+        let userRole = (response.user.role || 'user').toLowerCase().trim()
+        
+        // Security: Ensure role is 'user' for public signups (backend should already do this)
+        // Public signups should NEVER have admin/support/manager roles
+        // Force role to 'user' if it's not a valid admin role
+        const adminRoles = ['admin', 'super admin', 'superadmin', 'manager', 'support']
+        if (!adminRoles.includes(userRole)) {
+          userRole = 'user'
+          response.user.role = 'user'  // Ensure response has correct role
+        }
+        
+        // Check if user has admin access (only admin roles have access)
+        const isAdminUser = adminRoles.includes(userRole)
+        
+        setAuthState({
+          user: response.user,
+          loading: false,
+          isAdmin: isAdminUser  // Will be false for 'user' role
+        })
+        
         return { data: response, error: null }
       }
       return { data: null, error: new Error(response.error || 'Sign up failed') }

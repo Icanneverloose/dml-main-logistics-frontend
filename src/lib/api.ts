@@ -84,8 +84,9 @@ class ApiClient {
       if (!response.ok) {
         // Handle 401/403 for authentication
         if (response.status === 401 || response.status === 403) {
-          // Only redirect if not already on signin page
-          if (!window.location.pathname.includes('/auth/signin')) {
+          // Only redirect if not already on auth pages (signin or signup)
+          const currentPath = window.location.pathname
+          if (!currentPath.includes('/auth/signin') && !currentPath.includes('/auth/signup')) {
             window.location.href = '/auth/signin'
           }
           throw new Error(data.error || 'Unauthorized')

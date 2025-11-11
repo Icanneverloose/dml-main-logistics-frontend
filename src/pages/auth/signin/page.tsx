@@ -1,6 +1,6 @@
 
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../hooks/useAuth'
 
 export default function SignInPage() {
@@ -71,9 +71,13 @@ export default function SignInPage() {
           </h2>
           <p className="mt-2 text-sm text-gray-600">
             Or{' '}
-            <Link to="/auth/signup" className="font-medium text-blue-600 hover:text-blue-500">
+            <button
+              type="button"
+              onClick={() => navigate('/auth/signup')}
+              className="font-medium text-blue-600 hover:text-blue-500 cursor-pointer bg-transparent border-none p-0 underline"
+            >
               create a new account
-            </Link>
+            </button>
           </p>
         </div>
       </div>
