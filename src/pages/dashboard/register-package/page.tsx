@@ -18,6 +18,7 @@ const RegisterPackagePage = () => {
   }, [user, authLoading, navigate]);
 
   const [formData, setFormData] = useState({
+    tracking_number: '',
     senderName: '',
     senderEmail: '',
     senderAddress: '',
@@ -74,8 +75,7 @@ const RegisterPackagePage = () => {
       const weightInKg = parseFloat(formData.weight) * 0.453592; // Convert lbs to kg
 
       // Prepare shipment data matching the API format
-      // Note: For user registrations, we don't assign tracking number - admin will do that
-      const shipmentData = {
+      const shipmentData: any = {
         sender_name: formData.senderName,
         sender_email: formData.senderEmail || user?.email || '',
         sender_phone: formData.senderPhone,
@@ -98,6 +98,11 @@ const RegisterPackagePage = () => {
         status: 'Pending Registration' // Special status for user-registered packages
       };
 
+      // Add tracking number only if provided
+      if (formData.tracking_number && formData.tracking_number.trim()) {
+        shipmentData.tracking_number = formData.tracking_number.trim().toUpperCase();
+      }
+
       const response = await api.createShipment(shipmentData) as any;
       
       if (response.success) {
@@ -107,7 +112,13 @@ const RegisterPackagePage = () => {
         setShowSuccessModal(true);
         toast.success('Package registration submitted successfully!');
       } else {
-        toast.error(response.error || 'Failed to register package. Please try again.');
+        const errorMsg = response.error || 'Failed to register package. Please try again.';
+        // Handle duplicate tracking number error
+        if (response.error && response.error.includes('already exists')) {
+          toast.error(`Tracking number already exists. Please use a different tracking number or leave it empty to auto-generate.`);
+        } else {
+          toast.error(errorMsg);
+        }
       }
     } catch (error: any) {
       console.error('Package registration error:', error);
@@ -122,6 +133,7 @@ const RegisterPackagePage = () => {
     setStep(1);
     // Reset form
     setFormData({
+      tracking_number: '',
       senderName: '',
       senderEmail: '',
       senderAddress: '',
@@ -427,6 +439,24 @@ const RegisterPackagePage = () => {
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">Package Details</h2>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Tracking Number (Optional)
+                      <span className="text-gray-500 text-xs ml-2 font-normal">Leave empty to auto-generate</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="tracking_number"
+                      value={formData.tracking_number}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white uppercase"
+                      placeholder="e.g., TRK309637C9"
+                      style={{ textTransform: 'uppercase' }}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      If left empty, a tracking number will be automatically generated
+                    </p>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Package Type *</label>
                     <select

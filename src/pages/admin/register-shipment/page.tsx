@@ -32,6 +32,7 @@ const RegisterShipmentPage = () => {
     }
   }, [user, authLoading, navigate]);
   const [formData, setFormData] = useState({
+    tracking_number: '',
     sender_name: '',
     sender_email: '',
     sender_phone: '',
@@ -121,6 +122,11 @@ const RegisterShipmentPage = () => {
         estimated_delivery_date: formData.estimated_delivery_date || undefined
       };
 
+      // Add tracking number only if provided
+      if (formData.tracking_number && formData.tracking_number.trim()) {
+        shipmentData.tracking_number = formData.tracking_number.trim().toUpperCase();
+      }
+
       // Validate numeric values
       if (shipmentData.weight <= 0) {
         toast.error('Weight must be greater than 0');
@@ -156,7 +162,12 @@ const RegisterShipmentPage = () => {
       } else {
         const errorMsg = response.error || response.message || 'Failed to register shipment';
         console.error('Shipment creation failed:', errorMsg);
-        toast.error(errorMsg);
+        // Handle duplicate tracking number error
+        if (response.error && response.error.includes('already exists')) {
+          toast.error(`Tracking number already exists. Please use a different tracking number or leave it empty to auto-generate.`);
+        } else {
+          toast.error(errorMsg);
+        }
       }
     } catch (error: any) {
       console.error('Shipment creation error:', error);
@@ -385,6 +396,24 @@ const RegisterShipmentPage = () => {
                 Shipment Details
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tracking Number (Optional)
+                    <span className="text-gray-500 text-xs ml-2">Leave empty to auto-generate</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="tracking_number"
+                    value={formData.tracking_number}
+                    onChange={handleChange}
+                    placeholder="e.g., TRK309637C9"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#009FE3] focus:border-transparent text-gray-900 bg-white uppercase"
+                    style={{ textTransform: 'uppercase' }}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    If left empty, a tracking number will be automatically generated
+                  </p>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Package Type *</label>
                   <select
